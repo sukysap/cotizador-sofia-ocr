@@ -492,8 +492,17 @@
           <span id="sofiaLabel" style="font-size:13.5px; font-weight:600;">No</span>
         </div>
         <div class="hint" style="margin-top:8px;">Solo cambia las horas de instalación — el cliente accede únicamente al microservicio SOFIA - OCR, no al Portal Sofía completo.</div>
-        <div class="danger-box" id="licenciaNote" style="margin-top:10px;">
-          <span>⚠</span><span>Requiere adquirir 1 licencia No Empleado de SAP (USD 50/mes, facturado por SEIDOR trimestralmente junto al Plan). La gestiona el equipo comercial por fuera de este cotizador.</span>
+        <div id="licenciaBlock" style="margin-top:10px;">
+          <div class="field" style="margin-bottom:10px;">
+            <label>Licencias SAP del cliente</label>
+            <div class="radio-group" id="licenciaTipoGroup">
+              <label class="radio-opt checked" data-val="suscripcion"><input type="radio" name="licenciaTipo" value="suscripcion" checked>Suscripción</label>
+              <label class="radio-opt" data-val="onpremise"><input type="radio" name="licenciaTipo" value="onpremise">On premise</label>
+            </div>
+          </div>
+          <div class="danger-box" id="licenciaNote">
+            <span>⚠</span><span id="licenciaNoteTexto">Requiere adquirir 1 licencia No Empleado de SAP (USD 50/mes, facturado por SEIDOR trimestralmente junto al Plan). La gestiona el equipo comercial por fuera de este cotizador.</span>
+          </div>
         </div>
       </div>
       <div>
@@ -982,6 +991,37 @@ function computeInstalacion(){
 }
 
 /* ============================================================
+   5b. LICENCIA SAP INDIRECTA NO EMPLEADO (costo de terceros, informativo)
+   ============================================================ */
+var LICENCIA_SUSCRIPCION_USD_MES = 50;
+var LICENCIA_ONPREMISE_USD_ONETIME = 1500;
+var LICENCIA_ONPREMISE_PCT_MANTENIMIENTO = 20;
+
+function computeLicenciaNoEmpleado(){
+  var tieneSofia = $("tieneSofia").checked;
+  if (tieneSofia) return { activa: false };
+  var tipoEl = $("licenciaTipoGroup") ? $("licenciaTipoGroup").querySelector('input[name="licenciaTipo"]:checked') : null;
+  var tipo = tipoEl ? tipoEl.value : "suscripcion";
+  if (tipo === "onpremise") {
+    var mantenimientoAnual = LICENCIA_ONPREMISE_USD_ONETIME * (LICENCIA_ONPREMISE_PCT_MANTENIMIENTO / 100);
+    return {
+      activa: true, tipo: tipo,
+      oneTime: LICENCIA_ONPREMISE_USD_ONETIME, mantenimientoAnual: mantenimientoAnual,
+      notaTexto: "Requiere adquirir 1 licencia No Empleado de SAP (USD " + fmtInt(LICENCIA_ONPREMISE_USD_ONETIME) + " one time + " + LICENCIA_ONPREMISE_PCT_MANTENIMIENTO + "% de mantenimiento anual, facturado por SEIDOR). La gestiona el equipo comercial por fuera de este cotizador.",
+      docxDetalle: "Licencia perpetua (on premise). Mantenimiento anual facturado por SEIDOR por separado.",
+      docxMonto: "USD " + fmtInt(LICENCIA_ONPREMISE_USD_ONETIME) + " (one time) + " + LICENCIA_ONPREMISE_PCT_MANTENIMIENTO + "% anual"
+    };
+  }
+  return {
+    activa: true, tipo: "suscripcion",
+    usdMes: LICENCIA_SUSCRIPCION_USD_MES,
+    notaTexto: "Requiere adquirir 1 licencia No Empleado de SAP (USD " + LICENCIA_SUSCRIPCION_USD_MES + "/mes, facturado por SEIDOR trimestralmente junto al Plan). La gestiona el equipo comercial por fuera de este cotizador.",
+    docxDetalle: "Se factura trimestralmente junto al Plan.",
+    docxMonto: "USD " + LICENCIA_SUSCRIPCION_USD_MES + " / mes"
+  };
+}
+
+/* ============================================================
    6. IMPLEMENTACIÓN (costo one-time cotizado)
    ============================================================ */
 function computeImplementacion(){
@@ -1091,6 +1131,17 @@ $("ajusteTipoGroup").querySelectorAll('input[name="ajusteTipo"]').forEach(functi
   }
 })();
 
+if ($("licenciaTipoGroup")) {
+  $("licenciaTipoGroup").querySelectorAll('input[name="licenciaTipo"]').forEach(function(radio){
+    radio.addEventListener("change", function(){
+      $("licenciaTipoGroup").querySelectorAll(".radio-opt").forEach(function(opt){
+        opt.classList.toggle("checked", opt.dataset.val === radio.value && radio.checked);
+      });
+      recalc();
+    });
+  });
+}
+
 function updateAjusteApplyState(){
   var activo = $("ajusteActivo").checked;
   var motivo = str("ajusteMotivo");
@@ -1157,7 +1208,11 @@ function recalc(){
   // --- licencia note (Portal Sofía) ---
   var tieneSofia = $("tieneSofia").checked;
   $("sofiaLabel").textContent = tieneSofia ? "Sí" : "No";
-  $("licenciaNote").hidden = tieneSofia;
+  if ($("licenciaBlock")) $("licenciaBlock").hidden = tieneSofia;
+  var licencia = computeLicenciaNoEmpleado();
+  if (licencia.activa && $("licenciaNoteTexto")) {
+    $("licenciaNoteTexto").textContent = licencia.notaTexto;
+  }
 
   // --- instalación ---
   var inst = computeInstalacion();
@@ -1259,7 +1314,7 @@ function recalc(){
     cliente: cliente, nombreBase: nombreBase, nombreBasePruebas: nombreBasePruebas, vol: vol, tier: tier, subMensual: subMensual, subTrimestral: subTrimestral,
     inst: inst, impl: impl, bases: bases, ajuste: ajuste,
     totalSuscripcionTrimestral: totalSuscripcionTrimestral, totalOneTime: totalOneTime, finalTotal: finalTotal,
-    tieneSofia: tieneSofia, razones: getRazonesSociales(), sbp: sbp
+    tieneSofia: tieneSofia, licencia: licencia, razones: getRazonesSociales(), sbp: sbp
   };
 }
 
@@ -1922,12 +1977,12 @@ function generatePropuestaComercial(){
   children.push(bodyPara("Primera factura (suscripción trimestral + one time): " + fmtUSD(state.finalTotal) + ".", { color:"595959", size:18, spacingAfter:120 }));
 
   // ---- Licencia SAP indirecta No Empleado (apartado aparte, no incluido en los totales de SEIDOR) ----
-  if (!state.tieneSofia) {
+  if (!state.tieneSofia && state.licencia && state.licencia.activa) {
     var licRows = [ new d.TableRow({ children:[ headerCell("Concepto", W1), headerCell("Detalle", W2), headerCell("Monto (USD)", W3, d.AlignmentType.RIGHT) ] }) ];
     licRows.push(new d.TableRow({ children:[
       dataCell([new d.TextRun({text:"Licencia SAP indirecta No Empleado", bold:true, size:19})], W1),
-      dataCell([new d.TextRun({text:"Se factura trimestralmente junto al Plan.", size:19})], W2),
-      dataCell([new d.TextRun({text:"USD 50 / mes", bold:true, size:19})], W3, {align:d.AlignmentType.RIGHT})
+      dataCell([new d.TextRun({text: state.licencia.docxDetalle, size:19})], W2),
+      dataCell([new d.TextRun({text: state.licencia.docxMonto, bold:true, size:19})], W3, {align:d.AlignmentType.RIGHT})
     ]}));
     children.push(bodyPara("Licencia SAP indirecta No Empleado (costo de terceros, facturado por SEIDOR)", { bold:true, spacingBefore:120, spacingAfter:80 }));
     children.push(borderedTable(licRows, [W1,W2,W3]));
